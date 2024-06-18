@@ -1935,7 +1935,7 @@ public class S3AFileSystem extends FileSystem implements StreamCapabilities,
           // of a race between dest dir cleanup and rename in different
           // threads.
           S3AFileStatus dstParentStatus = innerGetFileStatus(parent,
-              false, StatusProbeEnum.FILE);
+              false, StatusProbeEnum.DIRECTORIES);
           // if this doesn't raise an exception then it's one of
           // raw S3: parent is a file: error
           // guarded S3: parent is a file or a dir.
@@ -3768,38 +3768,6 @@ public class S3AFileSystem extends FileSystem implements StreamCapabilities,
     if (key.isEmpty() && !needEmptyDirectoryFlag) {
       return new S3AFileStatus(Tristate.UNKNOWN, path, username);
     }
-
-    if (!key.isEmpty() && !key.endsWith("/")
-        && probes.contains(StatusProbeEnum.Head)) {
-      try {
-        // look for the simple file
-        ObjectMetadata meta = getObjectMetadata(key);
-        LOG.debug("Found exact file: normal file {}", key);
-        long contentLength = meta.getContentLength();
-        // check if CSE is enabled, then strip padded length.
-        if (isCSEEnabled
-            && meta.getUserMetaDataOf(Headers.CRYPTO_CEK_ALGORITHM) != null
-            && contentLength >= CSE_PADDING_LENGTH) {
-          contentLength -= CSE_PADDING_LENGTH;
-        }
-        return new S3AFileStatus(contentLength,
-            dateToLong(meta.getLastModified()),
-            path,
-            getDefaultBlockSize(path),
-            username,
-            meta.getETag(),
-            meta.getVersionId());
-      } catch (AmazonServiceException e) {
-        // if the response is a 404 error, it just means that there is
-        // no file at that path...the remaining checks will be needed.
-        if (e.getStatusCode() != SC_404 || isUnknownBucket(e)) {
-          throw translateException("getFileStatus", path, e);
-        }
-      } catch (AmazonClientException e) {
-        throw translateException("getFileStatus", path, e);
-      }
-    }
-
     // execute the list
     if (probes.contains(StatusProbeEnum.List)) {
       try {
@@ -3861,6 +3829,39 @@ public class S3AFileSystem extends FileSystem implements StreamCapabilities,
         throw translateException("getFileStatus", path, e);
       }
     }
+    
+    if (!key.isEmpty() && !key.endsWith("/")
+        && probes.contains(StatusProbeEnum.Head)) {
+      try {
+        // look for the simple file
+        ObjectMetadata meta = getObjectMetadata(key);
+        LOG.debug("Found exact file: normal file {}", key);
+        long contentLength = meta.getContentLength();
+        // check if CSE is enabled, then strip padded length.
+        if (isCSEEnabled
+            && meta.getUserMetaDataOf(Headers.CRYPTO_CEK_ALGORITHM) != null
+            && contentLength >= CSE_PADDING_LENGTH) {
+          contentLength -= CSE_PADDING_LENGTH;
+        }
+        return new S3AFileStatus(contentLength,
+            dateToLong(meta.getLastModified()),
+            path,
+            getDefaultBlockSize(path),
+            username,
+            meta.getETag(),
+            meta.getVersionId());
+      } catch (AmazonServiceException e) {
+        // if the response is a 404 error, it just means that there is
+        // no file at that path...the remaining checks will be needed.
+        if (e.getStatusCode() != SC_404 || isUnknownBucket(e)) {
+          throw translateException("getFileStatus", path, e);
+        }
+      } catch (AmazonClientException e) {
+        throw translateException("getFileStatus", path, e);
+      }
+    }
+
+    
 
     LOG.debug("Not Found: {}", path);
     throw new FileNotFoundException("No such file or directory: " + path);
